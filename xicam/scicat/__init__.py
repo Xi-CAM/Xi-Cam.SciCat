@@ -14,7 +14,8 @@ from xicam.Acquire.runengine import get_run_engine
 
 db = Broker.namded('local')
 
-Resource = namedtuple('Resource',['root_map', 'root', 'path'])
+Resource = namedtuple('Resource',['root_map', 'root', 'path', 'metadata'])
+
 
 class SciCatSettingsPlugin(ParameterSettingsPlugin):
     """Settings plugin for logging information and parameterization.
@@ -22,6 +23,7 @@ class SciCatSettingsPlugin(ParameterSettingsPlugin):
 
     def __init__(self):
         self.resources = []
+        self.metadata = {}
 
         super(SciCatSettingsPlugin, self).__init__(
             QIcon(str(path("icons/scicat.png"))),
@@ -35,11 +37,17 @@ class SciCatSettingsPlugin(ParameterSettingsPlugin):
 
     def consumer(self, name, doc):
         if name == 'start':
+            if self.metadata: # A run may have not completed.
+                self.scicat_ingest(self.resources)
             self.resources = []
+            # Extract limited metadata here. Non-essential metadata should be accessed via the uuid
+            self.metadata = {'uuid': doc['uuid']}
         elif name == 'resource':
-            self.resources.append(Resource(db.root_map, doc['root'], doc['resource_path']))
+            self.resources.append(Resource(db.root_map, doc['root'], doc['resource_path'], self.metadata))
         elif name == 'stop':
             self.scicat_ingest(self.resources)
+            self.resources = []
+            self.metadata = {}
 
     def scicat_ingest(self, resources:list[Resource]):
         for resource in resources:
@@ -50,7 +58,8 @@ class SciCatSettingsPlugin(ParameterSettingsPlugin):
                 name="dispatcher/run_7011_dispatcher",
                 parameters={
                     "file_path": full_path,  # for example: "test/test_065.h5"
-                    "is_export_control": False
+                    "is_export_control": False,
+                    "metadata": resource.metadata
                     # Not sure if you deal with confidential data that can't be stored on NERSC, but in that case, you can optionally set this to True. Otherwise, it defaults to False.
                 }
             )
